@@ -1,79 +1,123 @@
 # Homework 2: k-NN Classifier
 
-## Libraries Used
-
 
 ```python
-import sys
 import pandas as pd
 import numpy as np
-from sklearn.neighbors import KNeighborsClassifier
 ```
-
-## Load Data
-
-1. Data is structured like a CSV file, so ```pandas.read_csv()``` is used.
-2. Implementation:
-    1. Group examples of same labels with ```Dataframe.groupby()```.
-    2. Convert groups into a dictionary of lists.
-    3. Create a map with the first 30 examples (```t_list```) 
-       and a map with the last 20 examples (```d_list```)
-       of each list in the dictionary.
-    4. Concatenate the maps into one Dataframe using ```pandas.concat()```.
 
 
 ```python
-def load_data(filename):
-    '''Loads data, formats it, and returns a training set and a testing set.'''
-    data = pd.read_csv(filename, header=None)
+#define column names
+names = ['a', 'b', 'c', 'd', 'class']
 
-    group = dict(list(data.groupby(data.iloc[:,-1])))
-
-    t_size = 30
-    t_list = map(lambda key: group[key][:t_size], [*group])
-    d_list = map(lambda key: group[key][t_size:], [*group])
-
-    tset = pd.concat(t_list)
-    dset = pd.concat(d_list)
-
-    return [tset, dset]
+# Read CSV file
+df = pd.read_csv('iris.data.txt', header=None, names=names)
 ```
 
 ## k-NN Algorithm
 
-1. Create model by calling ```KNeighborsClassifier``` with parameter ```k=1```.
-2. Train the model by passing parameters to ```model.fit()```
-   including features (```tset.iloc[:,:-1]```) and labels (```tset.iloc[:,-1]```).
-3. Create a test set of type 2D numpy array using ```dset``` and make predictions.
-4. Compare the predictions and the test set. Loop through the set to count the number of successful predictions.
+The algorithm is implemented with vectorization in mind.
+
+1. Square of difference matrix $${S} = {X} - \begin{bmatrix} X_{t} \\ X_{t} \\ \vdots \\ X_{t} \\\end{bmatrix}$$
+   Each element is then squared.
+
+2. Euclidean distance is the sum of all columns of ${S}$.
+   $${D} = {S}\begin{bmatrix} 1 \\ 1 \\ \vdots \\ 1 \\\end{bmatrix}$$
+
+3. Selection is implemented by doing k partition on ${D}$.
+
+4. The indices of the selected ones is stored in `select`, which is passed to `y` to access their corresponding classes.
+   
+   `np.unique` passes each element and the number of times it was counted to `lablel` and `freq`.
+   
+   Return the element who has the most number of times counted.
 
 
 ```python
-def k_nn(tset, k, dset):
-    '''Executes k-NN algorithm and returns accuracy information.'''
-    model = KNeighborsClassifier(n_neighbors=k)
-    model.fit(tset.iloc[:,:-1], tset.iloc[:,-1])
-
-    examples = np.array(dset.iloc[:,:-1]).reshape(len(dset),-1)
-    predict = model.predict(examples)
+def knn_classifier(df, Xt, k):
+    '''Given dataset (X, y), classifies object Xt using k-NN algorithm.'''
+    # Split up features and labels
+    X = np.float32(df.iloc[:, 0:4])
+    y = np.array(df['class'])
     
-    d_size = len(predict)
-    success = 0
-    
-    for p, x in zip(predict, dset.iloc[:,-1]):
-        if p == x:
-            success += 1
+    # Convert test example into float numpy array
+    Xt =  np.float32(Xt.iloc[0:4]).reshape((1, -1))
 
-    return [success, d_size - success, success / d_size]
+    m, n = X.shape
+
+    # Square of difference for each element
+    sqdiff = (X - np.ones((m, 1)) @ Xt) ** 2
+
+    # Euclidean distance for every row
+    dist = np.sqrt(sqdiff @ np.ones((n, 1)))
+
+    # Selection of k smallest distance
+    select = np.argpartition(dist, k, axis=0)[:k]
+
+    # Find the dominant label among the selection
+    label, freq = np.unique(y[select], return_counts=True)
+
+    return label[freq.argmax()]
 ```
 
-## Execution and Results
+## Problem 1
+
+I took an example from the dataset.
 
 
 ```python
-TSET, DSET = load_data('iris.data.txt') # sys.argv[1]
-SUCC, FAIL, ACCU = k_nn(TSET, 1, DSET)
-print(f'Success: {SUCC}\nFailure: {FAIL}\nAccuracy: {ACCU:.3f}')
+# Test data: label='Iris-virginica'
+Xt = pd.DataFrame(np.array([
+    [6.7,3.0,5.2,2.3]
+]))
+
+# Perform k-NN Classification
+knn_classifier(df, Xt, 1)
+```
+
+
+
+
+    'Iris-virginica'
+
+
+
+## Problem 2
+
+1. Split the DataFrame into 2 sets: one contains 60% of each class example, the other contains the rest.
+
+2. The prediction function is a lambda function that calls `knn_classifier` and compares the result with the answer.
+
+3. `test_set.apply` applies the function to each row with vectorization.
+
+4. `np.count_nonzero` counts number of successful predictions in the data.
+
+
+```python
+# Split DataFrame into training set and testing set
+train_set = pd.concat([
+    df.iloc[0:30, :], 
+    df.iloc[50:80, :], 
+    df.iloc[100:130, :]
+])
+
+test_set = pd.concat([
+    df.iloc[30:50, :],
+    df.iloc[80:100, :],
+    df.iloc[130:150, :]
+])
+
+# Prediction function
+f = lambda Xt: knn_classifier(train_set, Xt, 1) == Xt.iloc[-1]
+
+# Apply function to each row of testing set 
+pred = test_set.apply(pred, axis=1)
+
+# Count number of successful predictions
+stat = np.count_nonzero(pred)
+
+print(f'Success: {stat}\nFailure: {test_set.shape[0] - stat}\nAccuracy: {stat / test_set.shape[0]:.3f}')
 ```
 
     Success: 58
